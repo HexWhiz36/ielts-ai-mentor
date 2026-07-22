@@ -2,91 +2,141 @@ import streamlit as st
 import google.generativeai as genai
 import datetime
 
-# --- CONFIGURATION ---
-# Replace with your actual Gemini API key
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-genai.configure(api_key=GOOGLE_API_KEY)
+# --- 1. PAGE SETUP & MEMORY ---
+st.set_page_config(page_title="AI IELTS Mentor", layout="wide")
 
-# Initialize the Gemini model
-model = genai.GenerativeModel('gemini-1.5-flash')
+# This is the memory logic to update file records dynamically so the plan survives page clicks
+if "daily_plan" not in st.session_state:
+    st.session_state.daily_plan = None
+if "last_date" not in st.session_state:
+    st.session_state.last_date = None
 
-# --- APP LAYOUT & SIDEBAR ---
-st.set_page_config(page_title="My IELTS AI Mentor", layout="wide")
-st.sidebar.title("Navigation")
-menu = st.sidebar.radio("Go to:", ["Daily Routine & Vocab", "Writing Evaluator", "Speaking Practice", "Free Video Masterclasses"])
+# --- 2. SIDEBAR & SECURE API CONNECTION ---
+st.sidebar.title("⚙️ Setup")
+st.sidebar.write("To prevent crashes, paste your Gemini API key below:")
+api_key = st.sidebar.text_input("Gemini API Key:", type="password")
 
-# --- SECTION 1: DAILY ROUTINE & VOCAB ---
-if menu == "Daily Routine & Vocab":
-    st.header(f"📅 Your Plan for {datetime.date.today()}")
-    st.write("Let Gemini generate your personalized daily tasks and vocabulary.")
+if not api_key:
+    st.title("Welcome to your IELTS AI Mentor 🎓")
+    st.warning("👈 Please enter your Gemini API Key in the sidebar to activate the AI. You can get one for free at aistudio.google.com")
+    st.stop() # Halts the app here so it doesn't crash trying to run AI without a key
+
+# Connect to AI securely
+try:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"Failed to connect: {e}")
+    st.stop()
+
+# --- 3. NAVIGATION ---
+st.sidebar.markdown("---")
+menu = st.sidebar.radio("Navigate", ["📅 Auto-Generated Daily Plan", "✍️ AI Writing Grader", "🗣️ Speaking Simulator", "📺 Masterclass Playlists"])
+
+# ==========================================
+# PAGE 1: AUTO-GENERATED DAILY PLAN
+# ==========================================
+if menu == "📅 Auto-Generated Daily Plan":
+    st.header("🎯 Your Daily Study Routine")
+    today = str(datetime.date.today())
     
-    if st.button("Generate Today's Plan"):
-        with st.spinner("Consulting your AI Mentor..."):
-            prompt = """Act as an expert IELTS tutor. Generate: 
-            1. A 3-step daily study routine for today (1 hour total). 
-            2. 5 advanced IELTS vocabulary words with their meanings, an example sentence, and synonyms. 
-            Keep it structured and encouraging."""
-            response = model.generate_content(prompt)
-            st.markdown(response.text)
+    # The AI checks if it has already built a plan for today. If not, it builds it automatically.
+    if st.session_state.last_date != today:
+        with st.spinner("🤖 AI is analyzing requirements and generating today's routine..."):
+            try:
+                prompt = """Act as an expert IELTS Mentor. Generate today's study plan for a student aiming for a Band 7.5 to 8. 
+                Include:
+                1. 'Today's Targets': 3 highly specific tasks (e.g., 'Do Cambridge Test 14 Reading Passage 1', 'Write a Task 2 essay on Technology').
+                2. 'Daily Vocabulary': 5 advanced words with their meaning, a Band 8 example sentence, and synonyms.
+                3. 'Examiner Secret': One advanced tip for scoring high.
+                Format clearly using Markdown."""
+                
+                response = model.generate_content(prompt)
+                
+                # Save to memory so it doesn't regenerate until tomorrow
+                st.session_state.daily_plan = response.text
+                st.session_state.last_date = today
+            except Exception as e:
+                st.error(f"Error generating plan: {e}")
+                st.stop()
+                
+    # Display the plan seamlessly
+    st.markdown(st.session_state.daily_plan)
+    st.success("✅ Your plan is locked in for today. Come back tomorrow for a new one!")
 
-# --- SECTION 2: WRITING EVALUATOR ---
-elif menu == "Writing Evaluator":
-    st.header("✍️ AI Writing Grader (Task 1 & Task 2)")
-    task_type = st.selectbox("Select Task Type", ["Task 1 (Report/Letter)", "Task 2 (Essay)"])
-    question = st.text_area("Paste the Question Here:")
-    essay = st.text_area("Paste your Answer Here:", height=250)
+# ==========================================
+# PAGE 2: WRITING GRADER (Upgraded)
+# ==========================================
+elif menu == "✍️ AI Writing Grader":
+    st.header("✍️ AI Writing Grader (Task 1 & 2)")
+    st.write("Paste your essay below. The AI will mark it exactly like a human examiner.")
     
-    if st.button("Evaluate My Writing"):
+    task_type = st.selectbox("Select Task", ["Task 1 (Academic/General)", "Task 2 (Essay)"])
+    question = st.text_area("The Question Prompt:")
+    essay = st.text_area("Your Essay:", height=250)
+    
+    if st.button("Grade My Essay"):
         if essay and question:
-            with st.spinner("Analyzing your writing against IELTS rubrics..."):
-                prompt = f"""Act as a strict IELTS examiner. Grade the following {task_type}.
-                Question: {question}
-                Essay: {essay}
+            with st.spinner("Evaluating against the 4 IELTS criteria..."):
+                try:
+                    prompt = f"""Act as a strict, official IELTS examiner. Grade this {task_type}.
+                    Question: {question}
+                    Essay: {essay}
+                    
+                    Format your response with Markdown headers:
+                    1. **Overall Band Score** (bold and clear)
+                    2. **Criteria Breakdown**: Give a score and 1 sentence reason for:
+                       - Task Response/Achievement
+                       - Coherence & Cohesion
+                       - Lexical Resource
+                       - Grammatical Range & Accuracy
+                    3. **Major Weaknesses**: List the top 2 things dragging the score down.
+                    4. **Band 8 Rewrite**: Rewrite one poorly phrased paragraph from the essay to show how a Band 8+ candidate would write it."""
+                    
+                    response = model.generate_content(prompt)
+                    st.markdown(response.text)
+                except Exception as e:
+                    st.error(f"Error grading essay: {e}")
+        else:
+            st.warning("Please provide both the question and your essay.")
+
+# ==========================================
+# PAGE 3: SPEAKING SIMULATOR
+# ==========================================
+elif menu == "🗣️ Speaking Simulator":
+    st.header("🗣️ Interactive Speaking Coach")
+    st.write("Generate a random speaking test. Record yourself on your phone, then evaluate your fluency.")
+    
+    if st.button("Generate Random Mock Test"):
+        with st.spinner("Creating test..."):
+            try:
+                prompt = """Act as an IELTS examiner. Generate a full speaking mock test:
+                - Part 1: 3 questions on a common topic (e.g., hometown, work, hobbies).
+                - Part 2: A cue card with bullet points. Include instructions to speak for 2 minutes.
+                - Part 3: 3 analytical questions related to the Part 2 topic.
+                Do not provide the answers, just the questions and instructions."""
                 
-                Provide a Band Score (1-9) for:
-                1. Task Achievement / Task Response
-                2. Coherence and Cohesion
-                3. Lexical Resource (Vocabulary)
-                4. Grammatical Range and Accuracy
-                
-                Give an overall band score. Then, provide 3 specific areas for improvement and rewrite one poorly phrased paragraph to make it band 8+."""
                 response = model.generate_content(prompt)
                 st.markdown(response.text)
-        else:
-            st.warning("Please enter both the question and your essay.")
+            except Exception as e:
+                st.error(f"Error generating test: {e}")
 
-# --- SECTION 3: SPEAKING PRACTICE ---
-elif menu == "Speaking Practice":
-    st.header("🗣️ Speaking Simulator")
-    st.write("Get a random IELTS Speaking topic to practice.")
-    
-    if st.button("Give me a Mock Test"):
-        with st.spinner("Generating questions..."):
-            prompt = "Act as an IELTS examiner. Give me a full Mock test: 3 questions for Part 1 (familiar topics), a cue card for Part 2 with 1 minute prep instructions, and 3 analytical questions for Part 3 based on the cue card theme."
-            response = model.generate_content(prompt)
-            st.markdown(response.text)
-    
-    st.info("Tip: Record yourself on your phone while answering, then listen back to check your fluency and hesitation!")
-
-# --- SECTION 4: FREE VIDEO MASTERCLASSES ---
-elif menu == "Free Video Masterclasses":
-    st.header("📺 Top YouTube Playlists for Band 8+")
+# ==========================================
+# PAGE 4: CURATED MASTERCLASSES
+# ==========================================
+elif menu == "📺 Masterclass Playlists":
+    st.header("📺 Structured YouTube Curriculum")
     st.markdown("""
-    You don't need a paid course. Watch these channels in this specific order:
+    Stop wandering around YouTube. Follow this specific sequence for free:
     
-    ### 1. Understanding the Basics (Foundation)
-    *   **Channel:** [IELTS Liz](https://www.youtube.com/user/ieltsliz)
-    *   **Focus:** Watch her foundational videos on Task 1 and Task 2 structures. She breaks down exactly what the examiners want.
+    ### Phase 1: The Blueprint (Learn the Rules)
+    *   **IELTS Liz:** Search her channel for "Task 1 Line Graph" and "Task 2 Essay Structures." Memorize her templates.
+    *   **E2 IELTS (Jay):** Search for "IELTS Reading Super Methods."
     
-    ### 2. Advanced Writing & Reading
-    *   **Channel:** [IELTS Advantage](https://www.youtube.com/c/IELTSAdvantage)
-    *   **Focus:** Watch his "Task 2 Framework" videos. He is the best for teaching you how to write complex sentences simply and accurately. 
+    ### Phase 2: Advanced Execution (Band 7 to 8+)
+    *   **IELTS Advantage:** Watch his "Task 2 Framework" and "Complex Sentences" videos. He teaches you how to write clearly, not confusingly.
+    *   **English Speaking Success (Keith):** Watch his videos on "Idioms for IELTS" and "Part 2 Cue Cards." Focus on his intonation.
     
-    ### 3. Speaking Fluency
-    *   **Channel:** [English Speaking Success (Keith)](https://www.youtube.com/c/EnglishSpeakingSuccess)
-    *   **Focus:** Best channel for speaking. He teaches natural vocabulary, phrasal verbs, and how to sound conversational rather than robotic.
-    
-    ### 4. Listening Practice
-    *   **Channel:** [Crack IELTS with Rob](https://www.youtube.com/) (or search "IELTS Listening Practice Tests")
-    *   **Focus:** Do one full listening test every day. Note down your mistakes and figure out *why* you misheard the answer.
+    ### Phase 3: Daily Grinding
+    *   **Crack IELTS with Rob:** Search this channel and do one full Listening and Reading test every single day under timed conditions.
     """)
